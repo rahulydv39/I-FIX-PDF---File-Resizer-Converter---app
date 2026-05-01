@@ -14,6 +14,7 @@ import '../widgets/target_size_selector.dart';
 import '../../core/constants/target_size_config.dart';
 import '../widgets/quality_slider.dart';
 import '../widgets/dpi_selector.dart';
+import '../widgets/info_sheet.dart';
 import 'conversion_screen.dart';
 
 /// Screen for configuring PDF settings before conversion
@@ -31,6 +32,21 @@ class _SettingsScreenState extends State<SettingsScreen> {
   // Target size state
   bool _enableSizeTarget = false;
   int _selectedTargetSizeKb = TargetSizeConfig.defaultSizeKb;
+
+  // File name controller
+  late final TextEditingController _nameCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameCtrl = TextEditingController(text: 'converted_file');
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    super.dispose();
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -72,6 +88,29 @@ class _SettingsScreenState extends State<SettingsScreen> {
               );
             },
           ),
+          IconButton(
+            icon: const Icon(Icons.info_outline_rounded),
+            onPressed: () {
+              showModalBottomSheet(
+                context: context,
+                backgroundColor: AppColors.backgroundMedium,
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                ),
+                builder: (_) => const InfoSheet(
+                  title: 'Photo to PDF',
+                  description: 'Convert your selected images into a PDF document.',
+                  steps: [
+                    'Adjust page formatting if needed',
+                    'Select quality & DPI',
+                    'Set a target file size (optional)',
+                    'Tap Generate PDF',
+                  ],
+                  tips: 'Lowering the DPI reduces file size drastically.',
+                ),
+              );
+            },
+          ),
         ],
       ),
       body: SingleChildScrollView(
@@ -84,6 +123,32 @@ class _SettingsScreenState extends State<SettingsScreen> {
               title: 'Page Size',
               icon: Icons.aspect_ratio_rounded,
               child: _buildPageSizeSelector(),
+            ),
+
+            const SizedBox(height: 20),
+
+            // File Name Section
+            _buildSection(
+              title: 'File Name',
+              icon: Icons.edit_document,
+              child: TextField(
+                controller: _nameCtrl,
+                style: const TextStyle(color: AppColors.textPrimaryDark),
+                decoration: InputDecoration(
+                  hintText: 'converted_file',
+                  hintStyle: const TextStyle(color: AppColors.textSecondaryDark),
+                  filled: true,
+                  fillColor: AppColors.backgroundLight,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                ),
+                onChanged: (value) {
+                  _settings = _settings.copyWith(customFileName: value.trim());
+                },
+              ),
             ),
 
             const SizedBox(height: 20),
@@ -385,10 +450,15 @@ class _SettingsScreenState extends State<SettingsScreen> {
     PdfSettings finalSettings = _settings;
 
     if (_enableSizeTarget) {
-      finalSettings = _settings.copyWith(
+      finalSettings = finalSettings.copyWith(
         enableSizeOptimization: true,
         targetSize: SizeTarget(kb: _selectedTargetSizeKb),
       );
+    }
+    
+    final customName = _nameCtrl.text.trim();
+    if (customName.isNotEmpty) {
+      finalSettings = finalSettings.copyWith(customFileName: customName);
     }
 
     Navigator.push(

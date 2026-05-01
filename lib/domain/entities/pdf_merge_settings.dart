@@ -18,11 +18,15 @@ class PdfMergeSettings extends Equatable {
   /// Whether to maintain page order (vs interleaved)
   final bool maintainOrder;
 
+  /// Custom file name for merged PDF
+  final String? customFileName;
+
   const PdfMergeSettings({
     this.enableSizeTarget = false,
     this.targetSizeBytes,
     this.includeBookmarks = true,
     this.maintainOrder = true,
+    this.customFileName,
   });
 
   /// Create a copy with updated values
@@ -31,12 +35,14 @@ class PdfMergeSettings extends Equatable {
     int? targetSizeBytes,
     bool? includeBookmarks,
     bool? maintainOrder,
+    String? customFileName,
   }) {
     return PdfMergeSettings(
       enableSizeTarget: enableSizeTarget ?? this.enableSizeTarget,
       targetSizeBytes: targetSizeBytes ?? this.targetSizeBytes,
       includeBookmarks: includeBookmarks ?? this.includeBookmarks,
       maintainOrder: maintainOrder ?? this.maintainOrder,
+      customFileName: customFileName ?? this.customFileName,
     );
   }
 
@@ -46,6 +52,7 @@ class PdfMergeSettings extends Equatable {
         targetSizeBytes,
         includeBookmarks,
         maintainOrder,
+        customFileName,
       ];
 }
 

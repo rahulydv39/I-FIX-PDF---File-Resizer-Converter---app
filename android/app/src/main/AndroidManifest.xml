@@ -2,6 +2,10 @@
     <!-- Required for ads -->
     <uses-permission android:name="android.permission.INTERNET"/>
     
+    <!-- Camera permission for edge detection -->
+    <uses-permission android:name="android.permission.CAMERA" />
+    <uses-feature android:name="android.hardware.camera" android:required="false" />
+    
     <!-- File storage permissions -->
     <!-- Android 13+ (API 33+) - Granular media permissions -->
     <uses-permission android:name="android.permission.READ_MEDIA_IMAGES"/>
@@ -10,11 +14,10 @@
     <!-- Android 10-12 (API 29-32) - Scoped storage -->
     <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
     
-    <!-- Android 9 and below (API 28 and below) - Legacy storage -->
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE" android:maxSdkVersion="29"/>
+
     
     <application
-        android:label="File Converter"
+        android:label="I FIX PDF"
         android:name="${applicationName}"
         android:icon="@mipmap/ic_launcher">
         

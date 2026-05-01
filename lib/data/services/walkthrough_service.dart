@@ -310,7 +310,7 @@ class WalkthroughService {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Text(
-              'Welcome to File Converter',
+              'Welcome to I FIX PDF',
               style: TextStyle(
                 fontSize: 18,
                 fontWeight: FontWeight.w600,

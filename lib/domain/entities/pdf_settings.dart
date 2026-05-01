@@ -80,16 +80,24 @@ class PdfSettings extends Equatable {
   /// Whether to enable size optimization
   final bool enableSizeOptimization;
 
+  /// Whether to maintain original page order
+  final bool maintainPageOrder;
+
+  /// Custom file name to save as
+  final String? customFileName;
+
   const PdfSettings({
-    this.pageSize = PageSizeType.auto,
-    this.quality = 80,
-    this.dpiPreset = DpiPreset.standard,
+    this.pageSize = PageSizeType.a4,
+    this.quality = 100,
+    this.dpiPreset = DpiPreset.screen,
     this.customDpi,
     this.targetWidth,
     this.targetHeight,
     this.lockAspectRatio = true,
     this.targetSize,
     this.enableSizeOptimization = false,
+    this.maintainPageOrder = true,
+    this.customFileName,
   });
 
   /// Get the effective DPI value
@@ -111,6 +119,8 @@ class PdfSettings extends Equatable {
     bool? lockAspectRatio,
     SizeTarget? targetSize,
     bool? enableSizeOptimization,
+    bool? maintainPageOrder,
+    String? customFileName,
   }) {
     return PdfSettings(
       pageSize: pageSize ?? this.pageSize,
@@ -121,8 +131,9 @@ class PdfSettings extends Equatable {
       targetHeight: targetHeight ?? this.targetHeight,
       lockAspectRatio: lockAspectRatio ?? this.lockAspectRatio,
       targetSize: targetSize ?? this.targetSize,
-      enableSizeOptimization:
-          enableSizeOptimization ?? this.enableSizeOptimization,
+      enableSizeOptimization: enableSizeOptimization ?? this.enableSizeOptimization,
+      maintainPageOrder: maintainPageOrder ?? this.maintainPageOrder,
+      customFileName: customFileName ?? this.customFileName,
     );
   }
 
@@ -152,5 +163,6 @@ class PdfSettings extends Equatable {
         lockAspectRatio,
         targetSize,
         enableSizeOptimization,
+        customFileName,
       ];
 }

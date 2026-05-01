@@ -1,7 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import '../../core/theme/app_colors.dart';
+import '../../core/di/injection_container.dart';
+import '../../data/services/walkthrough_service.dart';
 import 'auth_wrapper.dart';
+import 'app_tour_screen.dart';
 
 class SplashScreen extends StatefulWidget {
   const SplashScreen({super.key});
@@ -43,9 +46,13 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
 
     _controller.forward();
 
-    // Navigate to AuthWrapper after 2.5 seconds
-    Future.delayed(const Duration(milliseconds: 2500), () {
+    // Navigate to AppTourScreen or AuthWrapper after 2.5 seconds
+    Future.delayed(const Duration(milliseconds: 2500), () async {
       if (mounted) {
+        final isFirstLaunch = await sl<WalkthroughService>().isFirstLaunch();
+
+        if (!mounted) return;
+        
         // Restore system UI overlays
         SystemChrome.setEnabledSystemUIMode(
           SystemUiMode.manual, 
@@ -54,7 +61,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
         
         Navigator.of(context).pushReplacement(
           PageRouteBuilder(
-            pageBuilder: (_, __, ___) => const AuthWrapper(),
+            pageBuilder: (_, __, ___) => isFirstLaunch ? const AppTourScreen() : const AuthWrapper(),
             transitionsBuilder: (_, animation, __, child) {
               return FadeTransition(opacity: animation, child: child);
             },
@@ -109,7 +116,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                     
                     // App Name
                     const Text(
-                      'File Converter',
+                      'I FIX PDF',
                       style: TextStyle(
                         fontSize: 28,
                         fontWeight: FontWeight.bold,
@@ -121,7 +128,7 @@ class _SplashScreenState extends State<SplashScreen> with SingleTickerProviderSt
                     
                     // Tagline (Optional)
                     Text(
-                      'Fast & Secure Conversion',
+                      'Fix your PDF easily',
                       style: TextStyle(
                         fontSize: 14,
                         color: Colors.white.withValues(alpha: 0.7),

@@ -5,6 +5,7 @@ library;
 import 'dart:io';
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
+import 'package:flutter/foundation.dart';
 import '../../domain/entities/image_item.dart';
 import '../../domain/entities/pdf_settings.dart';
 
@@ -39,30 +40,11 @@ class ImageProcessorService {
     ImageItem imageItem,
     PdfSettings settings,
   ) async {
-    // Load the image
-    final file = File(imageItem.path);
-    final bytes = await file.readAsBytes();
-    img.Image? image = img.decodeImage(bytes);
-
-    if (image == null) {
-      throw ImageProcessorException('Failed to decode image: ${imageItem.path}');
-    }
-
-    // Apply DPI-based scaling if needed
-    image = _applyDpiScaling(image, imageItem, settings);
-
-    // Apply custom dimensions if specified
-    image = _applyCustomDimensions(image, settings);
-
-    // Encode with quality setting
-    final processedBytes = _encodeImage(image, imageItem.format, settings.quality);
-
-    return ProcessedImage(
-      bytes: processedBytes,
-      width: image.width,
-      height: image.height,
-      format: imageItem.format,
-    );
+    return compute(_processImageIsolated, {
+      'path': imageItem.path,
+      'format': imageItem.format,
+      'settings': settings,
+    });
   }
 
   /// Calculate dimensions based on DPI setting
@@ -221,4 +203,108 @@ class ImageProcessorException implements Exception {
 
   @override
   String toString() => 'ImageProcessorException: $message';
+}
+
+/// Top level function for isolate processing
+Future<ProcessedImage> _processImageIsolated(Map<String, dynamic> args) async {
+  final String path = args['path'];
+  final ImageFormat format = args['format'];
+  final PdfSettings settings = args['settings'];
+
+  final file = File(path);
+  final bytes = file.readAsBytesSync();
+  img.Image? image = img.decodeImage(bytes);
+
+  if (image == null) {
+    throw ImageProcessorException('Failed to decode image: $path');
+  }
+
+  // Apply DPI scaling
+  const double originalDpi = 72.0;
+  final double targetDpi = settings.effectiveDpi.toDouble();
+
+  if (targetDpi != originalDpi) {
+    final double scaleFactor = originalDpi / targetDpi;
+    final int newWidth = (image.width * scaleFactor).round();
+    final int newHeight = (image.height * scaleFactor).round();
+
+    if (newWidth != image.width || newHeight != image.height) {
+      image = img.copyResize(
+        image,
+        width: newWidth,
+        height: newHeight,
+        interpolation: img.Interpolation.linear,
+      );
+    }
+  }
+
+ // Apply custom dimensions safely
+final int? targetWidth = settings.targetWidth;
+final int? targetHeight = settings.targetHeight;
+
+// Ensure image dimensions are valid
+final int originalWidth = image.width ?? 1;
+final int originalHeight = image.height ?? 1;
+
+if (targetWidth != null || targetHeight != null) {
+  int newWidth = targetWidth ?? originalWidth;
+  int newHeight = targetHeight ?? originalHeight;
+
+  if (settings.lockAspectRatio) {
+    final double aspectRatio = originalWidth / originalHeight;
+
+    if (targetWidth != null && targetHeight == null) {
+      newHeight = (targetWidth / aspectRatio).round();
+    } else if (targetHeight != null && targetWidth == null) {
+      newWidth = (targetHeight * aspectRatio).round();
+    } else if (targetWidth != null && targetHeight != null) {
+      // Scale proportionally
+      final double widthRatio = targetWidth / originalWidth;
+      final double heightRatio = targetHeight / originalHeight;
+      final double ratio = widthRatio < heightRatio ? widthRatio : heightRatio;
+
+      newWidth = (originalWidth * ratio).round();
+      newHeight = (originalHeight * ratio).round();
+    }
+  }
+
+  // Prevent invalid dimensions
+  newWidth = newWidth <= 0 ? 1 : newWidth;
+  newHeight = newHeight <= 0 ? 1 : newHeight;
+
+  // Resize only if needed
+  if (newWidth != originalWidth || newHeight != originalHeight) {
+    image = img.copyResize(
+      image,
+      width: newWidth,
+      height: newHeight,
+      interpolation: img.Interpolation.linear,
+    );
+  }
+}
+
+  // Encode with quality setting
+  Uint8List processedBytes;
+  switch (format) {
+    case ImageFormat.jpg:
+    case ImageFormat.jpeg:
+      processedBytes = Uint8List.fromList(img.encodeJpg(image, quality: settings.quality));
+      break;
+    case ImageFormat.png:
+      processedBytes = Uint8List.fromList(img.encodePng(image));
+      break;
+    case ImageFormat.webp:
+      processedBytes = Uint8List.fromList(img.encodeJpg(image, quality: settings.quality));
+      break;
+    case ImageFormat.heic:
+      processedBytes = Uint8List.fromList(img.encodeJpg(image, quality: settings.quality));
+      break;
+  }
+
+  return ProcessedImage(
+    bytes: processedBytes,
+    width: image.width,
+    height: image.height,
+    format: format,
+  );
 }

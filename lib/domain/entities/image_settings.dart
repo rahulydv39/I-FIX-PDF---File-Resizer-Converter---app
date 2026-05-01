@@ -235,6 +235,9 @@ class ImageSettings extends Equatable {
   /// Enable size optimization
   final bool enableSizeOptimization;
 
+  /// Custom file name expression
+  final String? customFileName;
+
   const ImageSettings({
     this.outputFormat = OutputFormat.jpeg,
     this.quality = 85,
@@ -250,6 +253,7 @@ class ImageSettings extends Equatable {
     this.batchMode = true,
     this.targetSizeKb,
     this.enableSizeOptimization = false,
+    this.customFileName,
   });
 
   @override
@@ -268,6 +272,7 @@ class ImageSettings extends Equatable {
         batchMode,
         targetSizeKb,
         enableSizeOptimization,
+        customFileName,
       ];
 
   /// Get effective dimensions based on resize mode
@@ -303,6 +308,7 @@ class ImageSettings extends Equatable {
     bool? batchMode,
     int? targetSizeKb,
     bool? enableSizeOptimization,
+    String? customFileName,
   }) {
     return ImageSettings(
       outputFormat: outputFormat ?? this.outputFormat,
@@ -320,6 +326,7 @@ class ImageSettings extends Equatable {
       targetSizeKb: targetSizeKb ?? this.targetSizeKb,
       enableSizeOptimization:
           enableSizeOptimization ?? this.enableSizeOptimization,
+      customFileName: customFileName ?? this.customFileName,
     );
   }
 

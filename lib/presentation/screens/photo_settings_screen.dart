@@ -12,6 +12,7 @@ import '../bloc/monetization/monetization_bloc.dart';
 import '../widgets/quality_slider.dart';
 import '../widgets/target_size_selector.dart';
 import '../../core/constants/target_size_config.dart';
+import '../widgets/info_sheet.dart';
 import 'photo_conversion_screen.dart';
 
 /// Screen for configuring image conversion settings
@@ -33,10 +34,20 @@ class _PhotoSettingsScreenState extends State<PhotoSettingsScreen> {
   bool _enableSizeTarget = false;
   int _selectedTargetSizeKb = TargetSizeConfig.defaultSizeKb;
 
+  // File Name controller
+  late final TextEditingController _nameCtrl;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameCtrl = TextEditingController(text: 'converted_file');
+  }
+
   @override
   void dispose() {
     _widthController.dispose();
     _heightController.dispose();
+    _nameCtrl.dispose();
     super.dispose();
   }
 
@@ -80,6 +91,28 @@ class _PhotoSettingsScreenState extends State<PhotoSettingsScreen> {
               );
             },
           ),
+          IconButton(
+            icon: const Icon(Icons.info_outline_rounded),
+            onPressed: () {
+              showModalBottomSheet(
+                context: context,
+                backgroundColor: AppColors.backgroundMedium,
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                ),
+                builder: (_) => const InfoSheet(
+                  title: 'Photo to Photo',
+                  description: 'Resize, compress, and change image formats.',
+                  steps: [
+                    'Choose output format (JPG, PNG, WEBP)',
+                    'Set quality & resize options',
+                    'Configure target output size (optional)',
+                    'Tap Convert Images',
+                  ],
+                ),
+              );
+            },
+          ),
         ],
       ),
       body: SingleChildScrollView(
@@ -92,6 +125,32 @@ class _PhotoSettingsScreenState extends State<PhotoSettingsScreen> {
               title: 'Output Format',
               icon: Icons.image_rounded,
               child: _buildFormatSelector(),
+            ),
+
+            const SizedBox(height: 20),
+
+            // File Name Section
+            _buildSection(
+              title: 'File Name',
+              icon: Icons.edit_document,
+              child: TextField(
+                controller: _nameCtrl,
+                style: const TextStyle(color: AppColors.textPrimaryDark),
+                decoration: InputDecoration(
+                  hintText: 'converted_file',
+                  hintStyle: const TextStyle(color: AppColors.textSecondaryDark),
+                  filled: true,
+                  fillColor: AppColors.backgroundLight,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                ),
+                onChanged: (value) {
+                  _settings = _settings.copyWith(customFileName: value.trim());
+                },
+              ),
             ),
 
             const SizedBox(height: 20),
@@ -157,7 +216,7 @@ class _PhotoSettingsScreenState extends State<PhotoSettingsScreen> {
 
             // Target File Size Section
             _buildSection(
-              title: 'Target File Size',
+              title: 'Target size (max limit)',
               icon: Icons.compress_rounded,
               trailing: Switch(
                 value: _enableSizeTarget,
@@ -177,6 +236,31 @@ class _PhotoSettingsScreenState extends State<PhotoSettingsScreen> {
 
       // Convert Button
       bottomNavigationBar: _buildBottomBar(context),
+    );
+  }
+
+  void _onConvertPressed(BuildContext context) {
+    if (_nameCtrl.text.isNotEmpty) {
+      _settings = _settings.copyWith(customFileName: _nameCtrl.text.trim());
+    }
+
+    if (_enableSizeTarget) {
+      _settings = _settings.copyWith(
+        targetSizeKb: _selectedTargetSizeKb,
+        enableSizeOptimization: true,
+      );
+    } else {
+      _settings = _settings.copyWith(
+        targetSizeKb: null,
+        enableSizeOptimization: false,
+      );
+    }
+
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (context) => PhotoConversionScreen(settings: _settings),
+      ),
     );
   }
 
@@ -913,15 +997,19 @@ class _PhotoSettingsScreenState extends State<PhotoSettingsScreen> {
 
   /// Navigate to conversion screen
   void _startConversion(BuildContext context) {
+    final customName = _nameCtrl.text.trim();
+
     // Build final settings with target size if enabled
-    ImageSettings finalSettings = _settings;
+    ImageSettings finalSettings = _settings.copyWith(customFileName: customName);
 
     if (_enableSizeTarget) {
-      finalSettings = _settings.copyWith(
+      finalSettings = finalSettings.copyWith(
         targetSizeKb: _selectedTargetSizeKb,
         enableSizeOptimization: true,
       );
     }
+
+    if (!context.mounted) return;
 
     Navigator.push(
       context,

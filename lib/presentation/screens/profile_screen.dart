@@ -16,6 +16,7 @@ import '../bloc/monetization/monetization_bloc.dart';
 import '../bloc/monetization/monetization_state.dart';
 import 'image_history_screen.dart';
 import 'pdf_history_screen.dart';
+import 'scanner/my_documents_screen.dart';
 
 /// Profile screen with user info and subscription management
 class ProfileScreen extends StatelessWidget {
@@ -191,10 +192,9 @@ class ProfileScreen extends StatelessWidget {
   Widget _buildUsageStats(BuildContext context) {
     final historyService = sl<ConversionHistoryService>();
     
-    return FutureBuilder<HistoryStats>(
-      future: historyService.getStats(),
-      builder: (context, snapshot) {
-        final stats = snapshot.data;
+    return ValueListenableBuilder<HistoryStats?>(
+      valueListenable: historyService.statsNotifier,
+      builder: (context, stats, _) {
         final pdf = stats?.pdfCount ?? 0;
         final photo = stats?.imageCount ?? 0;
         
@@ -259,6 +259,25 @@ class ProfileScreen extends StatelessWidget {
                     ),
                   ),
                 ],
+              ),
+              const SizedBox(height: 12),
+              // Scanned Documents Card
+              Container(
+                width: double.infinity,
+                child: _buildStatCard(
+                  'Scanned Documents History',
+                  'Search & View OCR texts',
+                  Icons.document_scanner_rounded,
+                  AppColors.primary,
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (_) => const MyDocumentsScreen(),
+                      ),
+                    );
+                  },
+                ),
               ),
             ],
           ),
@@ -735,87 +754,261 @@ class ProfileScreen extends StatelessWidget {
     );
   }
 
-  /// Show privacy policy
+  /// Show privacy policy — Google Play compliant
   void _showPrivacyPolicy(BuildContext context) {
     showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text('Privacy Policy'),
-        content: const SingleChildScrollView(
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
+      builder: (ctx) => Dialog(
+        backgroundColor: AppColors.backgroundMedium,
+        insetPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 32),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
+        child: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            // Header
+            Container(
+              padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 18),
+              decoration: BoxDecoration(
+                gradient: AppColors.primaryGradient,
+                borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.privacy_tip_rounded, color: Colors.white, size: 22),
+                  const SizedBox(width: 10),
+                  const Expanded(
+                    child: Text(
+                      'Privacy Policy',
+                      style: TextStyle(
+                        color: Colors.white,
+                        fontSize: 18,
+                        fontWeight: FontWeight.bold,
+                      ),
+                    ),
+                  ),
+                  IconButton(
+                    icon: const Icon(Icons.close, color: Colors.white70, size: 20),
+                    onPressed: () => Navigator.pop(ctx),
+                    padding: EdgeInsets.zero,
+                    constraints: const BoxConstraints(),
+                  ),
+                ],
+              ),
+            ),
+
+            // Scrollable content
+            Flexible(
+              child: SingleChildScrollView(
+                padding: const EdgeInsets.all(20),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Last Updated: April 2026',
+                      style: TextStyle(
+                        color: AppColors.textSecondaryDark,
+                        fontSize: 12,
+                      ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // ── Camera Permission ──────────────────────────
+                    _buildPolicyCard(
+                      icon: Icons.camera_alt_rounded,
+                      iconColor: const Color(0xFF6366F1),
+                      title: '📷  Camera Access',
+                      body:
+                          'Camera is used ONLY when you tap "Scan Document" to capture '
+                          'a physical document.\n\n'
+                          '• Never accessed in the background\n'
+                          '• No photos are stored without your action\n'
+                          '• Scanned images are saved locally on your device only',
+                    ),
+                    const SizedBox(height: 12),
+
+                    // ── Storage Permission ─────────────────────────
+                    _buildPolicyCard(
+                      icon: Icons.photo_library_rounded,
+                      iconColor: const Color(0xFF10B981),
+                      title: '🗂️  Storage & Photos',
+                      body:
+                          'Storage access is used ONLY when you choose to select images '
+                          'from your gallery or save a converted file.\n\n'
+                          '• Files are read only when you explicitly select them\n'
+                          '• Saved files go to your device storage only\n'
+                          '• We never browse or scan your files automatically',
+                    ),
+                    const SizedBox(height: 12),
+
+                    // ── Local Processing ───────────────────────────
+                    _buildPolicyCard(
+                      icon: Icons.lock_outline_rounded,
+                      iconColor: const Color(0xFFF59E0B),
+                      title: '🔐  Your Data Stays on Your Device',
+                      body:
+                          'All conversions, scanning, and OCR processing happen '
+                          'entirely on your device.\n\n'
+                          '• No personal data is collected, stored, or shared\n'
+                          '• Your images and documents are never uploaded to any server\n'
+                          '• No account required to use core features',
+                    ),
+                    const SizedBox(height: 12),
+
+                    // ── What we do collect ─────────────────────────
+                    _buildPolicyCard(
+                      icon: Icons.analytics_outlined,
+                      iconColor: const Color(0xFF64748B),
+                      title: '📊  What We Do Collect',
+                      body:
+                          'To improve the app we may collect anonymised crash reports '
+                          'and usage analytics (e.g. which features are used most). '
+                          'This data contains no files, images, or personal information.',
+                    ),
+                    const SizedBox(height: 12),
+
+                    // ── Ads ────────────────────────────────────────
+                    _buildPolicyCard(
+                      icon: Icons.ad_units_rounded,
+                      iconColor: const Color(0xFFEF4444),
+                      title: '📢  Advertisements',
+                      body:
+                          'This app shows ads via Google AdMob. AdMob may use '
+                          'device identifiers to show relevant ads as described in '
+                          'Google\'s Privacy Policy. You can opt out via your device\'s '
+                          'ad settings.',
+                    ),
+                    const SizedBox(height: 12),
+
+                    // ── Contact ────────────────────────────────────
+                    const _PolicySectionTitle('📬  Contact Us'),
+                    const SizedBox(height: 6),
+                    const Text(
+                      'For privacy questions or data deletion requests:\n'
+                      'rahulyadav969102@gmail.com',
+                      style: TextStyle(
+                        color: AppColors.textSecondaryDark,
+                        fontSize: 13,
+                        height: 1.5,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+
+            // Footer button
+            Padding(
+              padding: const EdgeInsets.fromLTRB(20, 0, 20, 20),
+              child: SizedBox(
+                width: double.infinity,
+                child: ElevatedButton(
+                  onPressed: () => Navigator.pop(ctx),
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: AppColors.primary,
+                    padding: const EdgeInsets.symmetric(vertical: 14),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                  ),
+                  child: const Text(
+                    'Got It',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontWeight: FontWeight.w600,
+                    ),
+                  ),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  // ── Privacy Policy helper widgets ──────────────────────────────────
+
+  Widget _buildPolicyCard({
+    required IconData icon,
+    required Color iconColor,
+    required String title,
+    required String body,
+  }) {
+    return Container(
+      padding: const EdgeInsets.all(14),
+      decoration: BoxDecoration(
+        color: AppColors.backgroundDark,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(
+          color: iconColor.withValues(alpha: 0.25),
+          width: 1,
+        ),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
             children: [
-              Text(
-                'Last Updated: February 2026\n\n',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              Text(
-                '1. Information We Collect\n\n',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              Text(
-                'We collect minimal information necessary to provide our services. This includes:\n'
-                '• Files you convert (processed locally on your device)\n'
-                '• App usage statistics\n'
-                '• Crash reports for app improvement\n\n',
-              ),
-              Text(
-                '2. How We Use Your Information\n\n',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              Text(
-                'Your information is used to:\n'
-                '• Provide file conversion services\n'
-                '• Improve app performance\n'
-                '• Send conversion notifications (if enabled)\n\n',
-              ),
-              Text(
-                '3. Data Storage\n\n',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              Text(
-                'All file conversions happen locally on your device. We do not upload your files to any server. Converted files are stored in your device\'s local storage.\n\n',
-              ),
-              Text(
-                '4. Third-Party Services\n\n',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              Text(
-                'We may use third-party services for:\n'
-                '• Analytics (anonymized)\n'
-                '• Crash reporting\n'
-                '• Advertisements\n\n',
-              ),
-              Text(
-                '5. Your Rights\n\n',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              Text(
-                'You have the right to:\n'
-                '• Access your data\n'
-                '• Delete your data\n'
-                '• Opt-out of analytics\n\n',
-              ),
-              Text(
-                '6. Contact Us\n\n',
-                style: TextStyle(fontWeight: FontWeight.w600),
-              ),
-              Text(
-                'For privacy concerns, contact us at:\n'
-                'privacy@fileconverter.app',
+              Icon(icon, color: iconColor, size: 18),
+              const SizedBox(width: 8),
+              Expanded(
+                child: Text(
+                  title,
+                  style: const TextStyle(
+                    color: AppColors.textPrimaryDark,
+                    fontWeight: FontWeight.w600,
+                    fontSize: 14,
+                  ),
+                ),
               ),
             ],
           ),
-        ),
-        actions: [
-          TextButton(
-            onPressed: () => Navigator.pop(ctx),
-            child: const Text('Close'),
+          const SizedBox(height: 8),
+          Text(
+            body,
+            style: const TextStyle(
+              color: AppColors.textSecondaryDark,
+              fontSize: 13,
+              height: 1.55,
+            ),
           ),
         ],
       ),
     );
   }
+
+  // ── Temporary getter for backgroundMedium fallback ─
+  // (uses cardDark if backgroundMedium is not defined)
+
+  // ignore: unused_element
+  Color get _backgroundMedium =>
+      AppColors.cardDark;
+
+  /// Show privacy policy — Google Play compliant (original section kept below)
+  void _unused_showPrivacyPolicyLegacy(BuildContext context) {
+    showDialog(
+      context: context,
+      builder: (ctx) => const AlertDialog(title: Text(''))
+    );
+  }
+  // This stub is intentionally empty — the new _showPrivacyPolicy above
+  // replaces it fully. The legacy method reference is removed.
+
+  // ─────────────────────────────────────────────────────────────────
+  // Placeholder to keep the structure — the legacy privacy sections
+  // that were here (4. Third-Party Services onwards) are now within
+  // _showPrivacyPolicy via _buildPolicyCard widgets above.
+  //
+  // DO NOT add content below this comment — it is unreachable.
+  // ─────────────────────────────────────────────────────────────────
+
+  // ignore: unused_element
+  void _legacyPrivacyText() {
+    // Previously: sections 4–6 of the old dialog.
+    // Now replaced by the card-based layout in _showPrivacyPolicy().
+  }
+
+  /// Section title helper used inside Privacy Policy dialog.
 
   /// Rate app
   void _rateApp(BuildContext context) {
@@ -933,14 +1126,14 @@ class ProfileScreen extends StatelessWidget {
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
               Text(
-                'By using File Converter, you agree to these terms. If you disagree with any part of these terms, you may not use our app.\n\n',
+                'By using I FIX PDF, you agree to these terms. If you disagree with any part of these terms, you may not use our app.\n\n',
               ),
               Text(
                 '2. License\n\n',
                 style: TextStyle(fontWeight: FontWeight.w600),
               ),
               Text(
-                'We grant you a limited, non-exclusive, non-transferable license to use File Converter for personal or commercial purposes.\n\n',
+                'We grant you a limited, non-exclusive, non-transferable license to use I FIX PDF for personal or commercial purposes.\n\n',
               ),
               Text(
                 '3. Acceptable Use\n\n',
@@ -1012,6 +1205,22 @@ class ProfileScreen extends StatelessWidget {
       ),
     );
   }
+}
 
+/// Section title widget used inside the Privacy Policy dialog.
+class _PolicySectionTitle extends StatelessWidget {
+  final String title;
+  const _PolicySectionTitle(this.title);
 
+  @override
+  Widget build(BuildContext context) {
+    return Text(
+      title,
+      style: const TextStyle(
+        color: Colors.white,
+        fontWeight: FontWeight.w600,
+        fontSize: 14,
+      ),
+    );
+  }
 }

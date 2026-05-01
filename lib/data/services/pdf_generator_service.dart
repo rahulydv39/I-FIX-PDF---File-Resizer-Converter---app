@@ -8,9 +8,11 @@ import 'package:image/image.dart' as img;
 import 'package:pdf/pdf.dart';
 import 'package:pdf/widgets.dart' as pw;
 import 'package:path_provider/path_provider.dart';
+import 'package:flutter/foundation.dart';
 import '../../core/constants/app_constants.dart';
 import '../../domain/entities/image_item.dart';
 import '../../domain/entities/pdf_settings.dart';
+import '../../core/utils/target_size_optimizer.dart';
 import 'image_processor_service.dart';
 import 'file_export_service.dart';
 
@@ -56,6 +58,8 @@ class PdfGeneratorService {
     required PdfSettings settings,
     String? outputPath,
     void Function(int current, int total)? onProgress,
+    ExportFileType fileType = ExportFileType.pdf,
+    String? subFolder,
   }) async {
     final stopwatch = Stopwatch()..start();
 
@@ -79,7 +83,7 @@ class PdfGeneratorService {
         // Calculate per-image target size (distribute total size evenly)
         final totalTargetBytes = settings.targetSize!.sizeInBytes;
         final perImageTargetBytes = totalTargetBytes ~/ sortedImages.length;
-        
+
         processedImage = await _processImageWithTargetSize(
           imageItem,
           settings,
@@ -109,21 +113,22 @@ class PdfGeneratorService {
           pageFormat: pageFormat,
           margin: pw.EdgeInsets.zero,
           build: (pw.Context context) {
-            return pw.Center(
-              child: pw.Image(
-                pdfImage,
-                fit: pw.BoxFit.contain,
-              ),
-            );
+            return pw.Center(child: pw.Image(pdfImage, fit: pw.BoxFit.contain));
           },
         ),
       );
     }
 
     // Generate timestamp for filename
-    final now = DateTime.now();
-    final timestamp = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
-    final filename = 'PHOTO_$timestamp.pdf';
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+
+    String filename =
+        settings.customFileName != null && settings.customFileName!.isNotEmpty
+            ? settings.customFileName!
+            : 'PDF_$timestamp';
+    if (!filename.toLowerCase().endsWith('.pdf')) {
+      filename += '.pdf';
+    }
 
     // Save PDF using export service
     final bytes = await pdf.save();
@@ -131,7 +136,8 @@ class PdfGeneratorService {
       bytes: Uint8List.fromList(bytes),
       filename: filename,
       mimeType: 'application/pdf',
-      fileType: ExportFileType.pdf,
+      fileType: fileType,
+      subFolder: subFolder,
     );
 
     stopwatch.stop();
@@ -193,7 +199,9 @@ class PdfGeneratorService {
   /// Get the output directory for PDFs
   Future<String> getOutputDirectory() async {
     final Directory appDocDir = await getApplicationDocumentsDirectory();
-    final outputDir = Directory('${appDocDir.path}/${AppConstants.outputFolder}');
+    final outputDir = Directory(
+      '${appDocDir.path}/${AppConstants.outputFolder}',
+    );
 
     // Create directory if it doesn't exist
     if (!await outputDir.exists()) {
@@ -230,128 +238,30 @@ class PdfGeneratorService {
     PdfSettings settings,
     int targetBytes,
   ) async {
-    print('🎯 PDF IMAGE OPTIMIZATION (${imageItem.fileName})');
-    print('   Target: ${(targetBytes / 1024).toStringAsFixed(1)} KB per image');
-    
-    // Step 3: Validate Target Size
-    int safeTargetBytes = targetBytes;
-    if (safeTargetBytes < 10 * 1024) {
-      print('⚠️ Target size too small, setting absolute minimum to 10KB');
-      safeTargetBytes = 10 * 1024;
-    }
+    // 1. Process CPU-heavy parts (decode, resize, upscale) on background isolate
+    final processed = await compute(_isolatedProcessTargetSize, {
+      'imagePath': imageItem.path,
+      'imageFormat': imageItem.format,
+      'targetBytes': targetBytes,
+      'effectiveDpi': settings.effectiveDpi,
+      'targetWidth': settings.targetWidth,
+      'targetHeight': settings.targetHeight,
+      'lockAspectRatio': settings.lockAspectRatio,
+    });
 
-    // Load image
-    final file = File(imageItem.path);
-    final bytes = await file.readAsBytes();
-    var image = img.decodeImage(bytes);
-    
-    if (image == null) {
-      throw PdfGeneratorException('Failed to decode image: ${imageItem.path}');
-    }
+    // 2. Fast native compression on MAIN isolate
+    final optimizedBytes = await TargetSizeOptimizer.processTargetSize(
+      inputBytes: processed.bytes,
+      targetKB: targetBytes ~/ 1024,
+      useTargetSize: true,
+    );
 
-    print('   Original: ${image.width}x${image.height}, Format: ${imageItem.format.name}');
-
-    // Apply resizing (DPI and custom dimensions)
-    image = _applyImageResizing(image, imageItem, settings);
-    
-    // Convert PNG/HEIC to JPEG for better compression
-    ImageFormat targetFormat = imageItem.format;
-    if (imageItem.format == ImageFormat.png || imageItem.format == ImageFormat.heic) {
-      targetFormat = ImageFormat.jpeg;
-      print('   🔄 Converting ${imageItem.format.name} → JPEG for better compression');
-    }
-
-    try {
-      // Step 6: Memory Safety - single decoded image reused
-      img.Image workingImage = image;
-      
-      // Step 1: Implement Safe Compression Algorithm
-      int quality = 95;
-      final int minQuality = 20;
-      final int maxAttempts = 10;
-      int attempts = 0;
-      
-      Uint8List? bestBytes;
-      int bestDiff = double.maxFinite.toInt();
-
-      while (attempts < maxAttempts) {
-        attempts++;
-        
-        // Encode with current quality
-        Uint8List encodedBytes = _encodeWithQuality(workingImage, targetFormat, quality);
-        
-        int diff = (encodedBytes.length - safeTargetBytes).abs();
-        final sizeKB = encodedBytes.length / 1024;
-        final targetKB = safeTargetBytes / 1024;
-        
-        // Step 7: Logging
-        print('   📊 Attempt $attempts: Q=$quality, Size=${sizeKB.toStringAsFixed(1)}KB (target: ${targetKB.toStringAsFixed(1)}KB)');
-        
-        // Save best effort
-        if (diff < bestDiff) {
-          bestDiff = diff;
-          bestBytes = encodedBytes;
-        }
-
-        // If file size <= target size -> stop
-        if (encodedBytes.length <= safeTargetBytes) {
-          print('   ✅ Target achieved! Final: ${sizeKB.toStringAsFixed(1)}KB');
-          return ProcessedImage(
-            bytes: encodedBytes,
-            width: workingImage.width,
-            height: workingImage.height,
-            format: targetFormat,
-          );
-        }
-
-        // Otherwise reduce quality
-        quality -= 10;
-        
-        // Step 2: Add Image Resizing Fallback if quality gets too low
-        if (quality < minQuality && encodedBytes.length > safeTargetBytes) {
-          print('   🔽 Quality reached minimum, applying resize fallback by 10%');
-          workingImage = img.copyResize(
-            workingImage,
-            width: (workingImage.width * 0.9).round(),
-            height: (workingImage.height * 0.9).round(),
-            interpolation: img.Interpolation.linear,
-          );
-          // Reset quality slightly to try compressing the smaller image without brutal artifacting
-          quality = 70;
-        }
-      }
-      
-      // Step 4: Prevent Infinite Loop (max attempts reached)
-      if (bestBytes != null) {
-        final finalSizeKB = bestBytes.length / 1024;
-        print('   ⚠️ Max attempts reached, returning best effort: ${finalSizeKB.toStringAsFixed(1)} KB');
-        return ProcessedImage(
-          bytes: bestBytes,
-          width: workingImage.width,
-          height: workingImage.height,
-          format: targetFormat,
-        );
-      }
-      
-      // Failsafe
-      return ProcessedImage(
-        bytes: _encodeWithQuality(image, targetFormat, 80),
-        width: image.width,
-        height: image.height,
-        format: targetFormat,
-      );
-      
-    } catch (e) {
-      // Step 5: Handle Exceptions
-      print('❌ Compression failed with error: $e');
-      // Return a basic compressed version if logic fails completely
-      return ProcessedImage(
-        bytes: _encodeWithQuality(image, targetFormat, 60),
-        width: image.width,
-        height: image.height,
-        format: targetFormat,
-      );
-    }
+    return ProcessedImage(
+      bytes: optimizedBytes,
+      width: processed.width,
+      height: processed.height,
+      format: processed.format,
+    );
   }
 
   /// Apply image resizing based on settings
@@ -363,12 +273,12 @@ class PdfGeneratorService {
     // Apply DPI scaling
     const double originalDpi = 72.0;
     final double targetDpi = settings.effectiveDpi.toDouble();
-    
+
     if (targetDpi != originalDpi) {
       final double scaleFactor = originalDpi / targetDpi;
       final int newWidth = (image.width * scaleFactor).round();
       final int newHeight = (image.height * scaleFactor).round();
-      
+
       if (newWidth != image.width || newHeight != image.height) {
         image = img.copyResize(
           image,
@@ -388,7 +298,8 @@ class PdfGeneratorService {
         final double aspectRatio = image.width / image.height;
         if (settings.targetWidth != null && settings.targetHeight == null) {
           newHeight = (settings.targetWidth! / aspectRatio).round();
-        } else if (settings.targetHeight != null && settings.targetWidth == null) {
+        } else if (settings.targetHeight != null &&
+            settings.targetWidth == null) {
           newWidth = (settings.targetHeight! * aspectRatio).round();
         }
       }
@@ -407,7 +318,11 @@ class PdfGeneratorService {
   }
 
   /// Encode image with specific quality
-  Uint8List _encodeWithQuality(img.Image image, ImageFormat format, int quality) {
+  Uint8List _encodeWithQuality(
+    img.Image image,
+    ImageFormat format,
+    int quality,
+  ) {
     switch (format) {
       case ImageFormat.jpg:
       case ImageFormat.jpeg:
@@ -430,4 +345,71 @@ class PdfGeneratorException implements Exception {
 
   @override
   String toString() => 'PdfGeneratorException: $message';
+}
+
+/// Top-level helper function for isolates
+Future<ProcessedImage> _isolatedProcessTargetSize(
+  Map<String, dynamic> args,
+) async {
+  final String imagePath = args['imagePath'];
+  final ImageFormat formatStr = args['imageFormat'];
+  int targetBytes = args['targetBytes'];
+  final int effectiveDpi = args['effectiveDpi'];
+  final int? targetWidth = args['targetWidth'];
+  final int? targetHeight = args['targetHeight'];
+  final bool lockAspectRatio = args['lockAspectRatio'];
+
+  print('🎯 ISOLATE: PDF IMAGE OPTIMIZATION ($imagePath)');
+
+  if (targetBytes < 10 * 1024) {
+    targetBytes = 10 * 1024;
+  }
+
+  final file = File(imagePath);
+  final bytes = file.readAsBytesSync();
+  var image = img.decodeImage(bytes);
+
+  if (image == null) {
+    throw Exception('Failed to decode image');
+  }
+
+  // Apply DPI scaling
+  final double scaleFactor = 72.0 / effectiveDpi.toDouble();
+  int newWidth = (image.width * scaleFactor).round();
+  int newHeight = (image.height * scaleFactor).round();
+
+  // Apply custom dimensions if needed
+  if (targetWidth != null || targetHeight != null) {
+    newWidth = targetWidth ?? image.width;
+    newHeight = targetHeight ?? image.height;
+
+    if (lockAspectRatio) {
+      final double aspectRatio = image.width / image.height;
+      if (targetWidth != null && targetHeight == null) {
+        newHeight = (targetWidth / aspectRatio).round();
+      } else if (targetHeight != null && targetWidth == null) {
+        newWidth = (targetHeight * aspectRatio).round();
+      }
+    }
+  }
+
+  if (newWidth != image.width || newHeight != image.height) {
+    image = img.copyResize(
+      image,
+      width: newWidth,
+      height: newHeight,
+      interpolation: img.Interpolation.linear,
+    );
+  }
+
+  // Always encode to JPEG for target-size path.
+  // ❌ Never encode to PNG here — PNG inflates byte count and breaks the
+  //    optimizer's binary search (it would always see input > target).
+  // ✅ TargetSizeOptimizer always operates on JPEG bytes.
+  return ProcessedImage(
+    bytes: Uint8List.fromList(img.encodeJpg(image, quality: 95)),
+    width: image.width,
+    height: image.height,
+    format: ImageFormat.jpeg,
+  );
 }

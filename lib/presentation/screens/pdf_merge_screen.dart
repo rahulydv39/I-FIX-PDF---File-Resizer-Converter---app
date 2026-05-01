@@ -1,12 +1,9 @@
-/// PDF Merge Screen
-/// Screen for selecting PDFs to merge with settings
-library;
-
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:google_mobile_ads/google_mobile_ads.dart';
 import '../widgets/target_size_selector.dart';
 import '../widgets/conversion_success_banner.dart';
+import '../widgets/info_sheet.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/di/injection_container.dart';
 import '../../domain/entities/pdf_merge_settings.dart';
@@ -14,9 +11,10 @@ import '../../domain/entities/conversion_history_item.dart';
 import '../../data/services/pdf_merge_service.dart';
 import '../../data/services/file_export_service.dart';
 import '../../data/services/conversion_history_service.dart';
-import '../../services/ads_service.dart';
 import '../../data/services/usage_stats_service.dart';
 import '../../core/constants/target_size_config.dart';
+import '../controllers/banner_ad_controller.dart';
+import '../../services/ads_service.dart';
 
 /// Screen for PDF merge with settings
 class PdfMergeScreen extends StatefulWidget {
@@ -38,6 +36,43 @@ class _PdfMergeScreenState extends State<PdfMergeScreen> {
   // Target size state
   int _selectedTargetSizeKb = TargetSizeConfig.defaultSizeKb;
 
+  // File Name controller
+  late final TextEditingController _nameCtrl;
+
+  // Inline Medium Rectangle Ad (preloaded on init)
+  BannerAdController? _inlineAdController;
+
+  // Completion-screen banner ad (preloaded on init)
+  BannerAdController? _completionBannerController;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameCtrl = TextEditingController(text: 'converted_file');
+
+    // Pre-load both ads so they are ready when the user needs them
+    _inlineAdController = BannerAdController(
+      onAdLoaded: (_) { if (mounted) setState(() {}); },
+    );
+    _completionBannerController = BannerAdController(
+      onAdLoaded: (_) { if (mounted) setState(() {}); },
+    );
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (mounted) {
+        _inlineAdController!.loadAd(context);
+        _completionBannerController!.loadAd(context);
+      }
+    });
+  }
+
+  @override
+  void dispose() {
+    _nameCtrl.dispose();
+    _inlineAdController?.dispose();
+    _completionBannerController?.dispose();
+    super.dispose();
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -45,6 +80,30 @@ class _PdfMergeScreenState extends State<PdfMergeScreen> {
       appBar: AppBar(
         title: const Text('PDF Merge'),
         backgroundColor: AppColors.backgroundDark,
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.info_outline_rounded),
+            onPressed: () {
+              showModalBottomSheet(
+                context: context,
+                backgroundColor: AppColors.backgroundMedium,
+                shape: const RoundedRectangleBorder(
+                  borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+                ),
+                builder: (_) => const InfoSheet(
+                  title: 'PDF Merge',
+                  description: 'Combine multiple PDFs into one file.',
+                  steps: [
+                    'Select at least 2 PDFs',
+                    'Arrange the order by dragging',
+                    'Configure target size (optional)',
+                    'Tap Merge to create your PDF',
+                  ],
+                ),
+              );
+            },
+          ),
+        ],
       ),
       body: _result != null
           ? _buildCompletedState()
@@ -78,7 +137,44 @@ class _PdfMergeScreenState extends State<PdfMergeScreen> {
             child: _buildPdfList(),
           ),
 
+          const SizedBox(height: 20),
+
+          if (_inlineAdController != null && _inlineAdController!.isLoaded)
+            Container(
+              alignment: Alignment.center,
+              margin: const EdgeInsets.only(bottom: 20),
+              decoration: BoxDecoration(
+                color: AppColors.cardDark,
+                borderRadius: BorderRadius.circular(16),
+              ),
+              child: _inlineAdController!.getAdWidget(),
+            ),
+
           if (_selectedPdfs.isNotEmpty) ...[
+            // File Name Section
+            _buildSection(
+              title: 'File Name',
+              icon: Icons.edit_document,
+              child: TextField(
+                controller: _nameCtrl,
+                style: const TextStyle(color: AppColors.textPrimaryDark),
+                decoration: InputDecoration(
+                  hintText: 'converted_file',
+                  hintStyle: const TextStyle(color: AppColors.textSecondaryDark),
+                  filled: true,
+                  fillColor: AppColors.backgroundLight,
+                  border: OutlineInputBorder(
+                    borderRadius: BorderRadius.circular(8),
+                    borderSide: BorderSide.none,
+                  ),
+                  contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                ),
+                onChanged: (value) {
+                  _settings = _settings.copyWith(customFileName: value.trim());
+                },
+              ),
+            ),
+
             const SizedBox(height: 20),
 
             // Merge Options Section
@@ -92,7 +188,7 @@ class _PdfMergeScreenState extends State<PdfMergeScreen> {
 
             // Target File Size Section
             _buildSection(
-              title: 'Target File Size',
+              title: 'Reduce size (approximate)',
               icon: Icons.compress_rounded,
               trailing: Switch(
                 value: _settings.enableSizeTarget,
@@ -115,9 +211,12 @@ class _PdfMergeScreenState extends State<PdfMergeScreen> {
               icon: Icons.summarize_rounded,
               child: _buildSummary(),
             ),
-          ],
 
-          const SizedBox(height: 100),
+            const SizedBox(height: 30),
+
+              
+            const SizedBox(height: 100),
+          ],
         ],
       ),
     );
@@ -441,50 +540,17 @@ class _PdfMergeScreenState extends State<PdfMergeScreen> {
   }
 
   Widget _buildProcessingState() {
-    return Center(
+    return const Center(
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          SizedBox(
-            width: 120,
-            height: 120,
-            child: Stack(
-              fit: StackFit.expand,
-              children: [
-                CircularProgressIndicator(
-                  value: _progress,
-                  strokeWidth: 8,
-                  backgroundColor: AppColors.backgroundLight,
-                  valueColor:
-                      const AlwaysStoppedAnimation<Color>(AppColors.primary),
-                ),
-                Center(
-                  child: Text(
-                    '${(_progress * 100).toInt()}%',
-                    style: const TextStyle(
-                      fontSize: 24,
-                      fontWeight: FontWeight.bold,
-                      color: AppColors.textPrimaryDark,
-                    ),
-                  ),
-                ),
-              ],
-            ),
-          ),
-          const SizedBox(height: 32),
-          const Text(
-            'Merging PDFs...',
+          CircularProgressIndicator(),
+          SizedBox(height: 12),
+          Text("Optimizing file size...",
             style: TextStyle(
               fontSize: 18,
               fontWeight: FontWeight.w600,
               color: AppColors.textPrimaryDark,
-            ),
-          ),
-          const SizedBox(height: 8),
-          Text(
-            'Processing ${_selectedPdfs.length} files',
-            style: const TextStyle(
-              color: AppColors.textSecondaryDark,
             ),
           ),
         ],
@@ -494,32 +560,27 @@ class _PdfMergeScreenState extends State<PdfMergeScreen> {
 
   Widget _buildCompletedState() {
     // Only show banner for normal conversions (no target size)
-    final isTargetSizeUsed = _settings.enableSizeTarget && 
+    final isTargetSizeUsed = _settings.enableSizeTarget &&
                              _settings.targetSizeBytes != null;
-    final adsService = sl<AdsService>();
-    final bannerAd = adsService.createBannerAdIfNeeded(
-      isTargetSizeUsed: isTargetSizeUsed,
-    );
-    
+    final showBanner = !isTargetSizeUsed &&
+        _completionBannerController != null &&
+        _completionBannerController!.isLoaded;
+
     return Center(
       child: SingleChildScrollView(
         padding: const EdgeInsets.all(24),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            // Banner Ad at the top - only for normal conversions
-            if (bannerAd != null) ...[
+            // Preloaded banner — only for normal (non-target-size) conversions
+            if (showBanner) ...[
               Container(
                 decoration: BoxDecoration(
                   color: AppColors.cardDark,
                   borderRadius: BorderRadius.circular(8),
                 ),
                 padding: const EdgeInsets.all(8),
-                child: SizedBox(
-                  width: bannerAd.size.width.toDouble(),
-                  height: bannerAd.size.height.toDouble(),
-                  child: AdWidget(ad: bannerAd),
-                ),
+                child: _completionBannerController!.getAdWidget(),
               ),
               const SizedBox(height: 24),
             ],
@@ -727,8 +788,10 @@ class _PdfMergeScreenState extends State<PdfMergeScreen> {
   }
 
   Future<void> _startMerge() async {
-    // Start merge immediately (unlimited conversions)
+    final customName = _nameCtrl.text.trim();
+
     setState(() {
+      _settings = _settings.copyWith(customFileName: customName);
       _isProcessing = true;
       _progress = 0;
     });
@@ -736,7 +799,7 @@ class _PdfMergeScreenState extends State<PdfMergeScreen> {
     // Show appropriate ad based on target size usage
     final isTargetSizeUsed = _settings.enableSizeTarget &&
                              _settings.targetSizeBytes != null;
-    final adsService = sl<AdsService>();
+    final adsService = AdsService();
     await adsService.showAdIfNeeded(isTargetSizeUsed: isTargetSizeUsed);
     _error = null;
 

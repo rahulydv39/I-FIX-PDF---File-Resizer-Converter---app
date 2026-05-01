@@ -23,6 +23,10 @@ import '../../presentation/bloc/image_selection/image_selection_bloc.dart';
 import '../../presentation/bloc/pdf_conversion/pdf_conversion_bloc.dart';
 import '../../presentation/bloc/image_conversion/image_conversion_bloc.dart';
 import '../../presentation/bloc/monetization/monetization_bloc.dart';
+import '../../presentation/bloc/scanner/scanner_bloc.dart';
+import '../../data/services/document_service.dart';
+import '../../data/services/ocr_service.dart';
+import '../../data/services/document_image_processor.dart';
 
 /// Global service locator instance
 final GetIt sl = GetIt.instance;
@@ -123,10 +127,32 @@ Future<void> initDependencies() async {
     () => SupportService(),
   );
 
+  // Scanner Services
+  sl.registerLazySingleton<DocumentService>(
+    () => DocumentService(),
+  );
+  
+  sl.registerLazySingleton<OCRService>(
+    () => OCRService(),
+  );
+  
+  sl.registerLazySingleton<DocumentImageProcessor>(
+    () => DocumentImageProcessor(),
+  );
+
   // ============ BLoCs ============
 
   // BLoCs are registered as factory to create new instances
   // This allows proper disposal when widgets are removed
+
+  sl.registerFactory<ScannerBloc>(
+    () => ScannerBloc(
+      sl<DocumentService>(),
+      sl<OCRService>(),
+      sl<DocumentImageProcessor>(),
+      sl<PdfGeneratorService>(),
+    ),
+  );
 
   sl.registerFactory<ImageSelectionBloc>(
     () => ImageSelectionBloc(

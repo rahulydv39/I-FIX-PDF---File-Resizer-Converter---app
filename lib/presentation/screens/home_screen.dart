@@ -1,11 +1,8 @@
-/// Home Screen
-/// Main screen with conversion mode selection and image management
-library;
-
 import 'package:flutter/material.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import '../../core/theme/app_colors.dart';
 import '../../core/di/injection_container.dart';
+import '../../core/utils/permission_handler_utils.dart';
 import '../../domain/entities/conversion_mode.dart';
 import '../../data/services/walkthrough_service.dart';
 import '../bloc/image_selection/image_selection_bloc.dart';
@@ -38,10 +35,6 @@ class _HomeScreenState extends State<HomeScreen> {
   @override
   void initState() {
     super.initState();
-    // Check and start walkthrough after frame is built
-    WidgetsBinding.instance.addPostFrameCallback((_) {
-      _checkAndStartWalkthrough();
-    });
   }
 
   /// Check if first launch and start walkthrough
@@ -142,7 +135,7 @@ class _HomeScreenState extends State<HomeScreen> {
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Text(
-                    'File Converter',
+                    'I FIX PDF',
                     style: TextStyle(
                       fontSize: 20,
                       fontWeight: FontWeight.bold,
@@ -610,8 +603,15 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 
-  /// Pick images from gallery
-  void _pickImages(BuildContext context) {
+  /// Pick images from gallery — requests storage permission first.
+  void _pickImages(BuildContext context) async {
+    // ── Storage / Gallery permission check ────────────────────────
+    // Permission is only requested when the user explicitly taps
+    // "Add Images". A rationale dialog explains the purpose first.
+    final granted =
+        await PermissionHandlerUtils.requestStoragePermission(context);
+    if (!granted || !context.mounted) return;
+    // ─────────────────────────────────────────────────────
     context.read<ImageSelectionBloc>().add(const PickMultipleImages());
   }
 

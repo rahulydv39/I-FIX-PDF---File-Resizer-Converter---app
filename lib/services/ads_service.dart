@@ -158,8 +158,6 @@ class AdsService implements AdsRepository {
     _rewardedAd = null;
     _interstitialAd?.dispose();
     _interstitialAd = null;
-    _bannerAd?.dispose();
-    _bannerAd = null;
     _statusController.close();
   }
 
@@ -265,60 +263,7 @@ class AdsService implements AdsRepository {
     }
   }
 
-  // ============ Banner Ads ============
 
-  /// The loaded banner ad
-  BannerAd? _bannerAd;
-
-  /// Create and load a banner ad
-  BannerAd? createBannerAd() {
-    if (_bannerAd != null) return _bannerAd;
-
-    _bannerAd = BannerAd(
-      adUnitId: MonetizationConstants.bannerAdUnitId,
-      size: AdSize.banner,
-      request: const AdRequest(),
-      listener: BannerAdListener(
-        onAdLoaded: (Ad ad) {
-          print('💰 AdMob: Banner ad loaded');
-        },
-        onAdFailedToLoad: (Ad ad, LoadAdError error) {
-          print('💰 AdMob: Banner ad failed to load: $error');
-          ad.dispose();
-          _bannerAd = null;
-        },
-      ),
-    );
-
-    _bannerAd!.load();
-    return _bannerAd;
-  }
-
-  /// Create banner ad only if needed (for normal conversions)
-  /// 
-  /// If [isTargetSizeUsed] is true, returns null (video ad was shown)
-  /// If false, creates and returns banner ad for success screen
-  BannerAd? createBannerAdIfNeeded({required bool isTargetSizeUsed}) {
-    // No banner if video ad was shown for target size
-    if (isTargetSizeUsed) {
-      print('💰 AdMob: Target size used - no banner ad');
-      return null;
-    }
-
-    // Create banner for normal conversions
-    print('💰 AdMob: Normal conversion - creating banner ad');
-    return createBannerAd();
-  }
-
-  /// Get banner ad widget
-  Widget? getBannerAdWidget() {
-    if (_bannerAd == null) return null;
-    return SizedBox(
-      width: _bannerAd!.size.width.toDouble(),
-      height: _bannerAd!.size.height.toDouble(),
-      child: AdWidget(ad: _bannerAd!),
-    );
-  }
 
   // ============ Internal Helpers ============
 
@@ -360,5 +305,20 @@ class AdsService implements AdsRepository {
     if (!_statusController.isClosed) {
       _statusController.add(status);
     }
+  }
+
+  // ============ Banner Ads ============
+  
+  BannerAd createBannerAd() {
+    return BannerAd(
+      adUnitId: "YOUR_BANNER_AD_ID",
+      size: AdSize.banner,
+      request: const AdRequest(),
+      listener: BannerAdListener(
+        onAdFailedToLoad: (ad, error) {
+          ad.dispose();
+        },
+      ),
+    )..load();
   }
 }

@@ -4,6 +4,7 @@
 library;
 
 import 'dart:io';
+import 'package:flutter/foundation.dart';
 import 'package:sqflite/sqflite.dart';
 import 'package:path/path.dart' as p;
 import '../../domain/entities/conversion_history_item.dart';
@@ -18,13 +19,15 @@ class ConversionHistoryService {
   Database? _db;
   bool _isInitialized = false;
   FirestoreSyncService? _syncService;
+  
+  /// Notifier for real-time history stats updates
+  final ValueNotifier<HistoryStats?> statsNotifier = ValueNotifier(null);
 
   /// Set the Firestore sync service (called from DI after construction)
   void setSyncService(FirestoreSyncService syncService) {
     _syncService = syncService;
   }
 
-  /// Initialize the database
   Future<void> initialize() async {
     if (_isInitialized) return;
 
@@ -51,6 +54,7 @@ class ConversionHistoryService {
 
     _isInitialized = true;
     print('📦 History database initialized');
+    _updateStatsNotifier();
   }
 
   /// Ensure DB is ready
@@ -71,6 +75,8 @@ class ConversionHistoryService {
 
     // Sync to Firestore
     _syncService?.addHistoryEntry(item);
+
+    _updateStatsNotifier();
 
     return id;
   }
@@ -114,6 +120,7 @@ class ConversionHistoryService {
     }
 
     print('📦 History loaded from Firestore: $added new entries added');
+    _updateStatsNotifier();
   }
 
   /// Get all image history entries (newest first)
@@ -201,6 +208,50 @@ class ConversionHistoryService {
       );
 
       print('🗑️ History entry deleted: id=$id, ${item.fileName}');
+      _updateStatsNotifier();
+    }
+  }
+
+  /// Rename a history entry and its file from disk
+  Future<void> renameHistory(int id, String newName) async {
+    await _ensureInitialized();
+
+    final rows = await _db!.query(
+      _tableName,
+      where: 'id = ?',
+      whereArgs: [id],
+    );
+
+    if (rows.isNotEmpty) {
+      final item = ConversionHistoryItem.fromMap(rows.first);
+      final file = File(item.filePath);
+      
+      if (await file.exists()) {
+        final dir = p.dirname(item.filePath);
+        final ext = p.extension(item.filePath);
+        
+        String nameWithoutExt = newName;
+        if (newName.toLowerCase().endsWith(ext.toLowerCase())) {
+          nameWithoutExt = newName.substring(0, newName.length - ext.length);
+        }
+        
+        final finalFileName = '$nameWithoutExt$ext';
+        final newPath = p.join(dir, finalFileName);
+        
+        await file.rename(newPath);
+        
+        await _db!.update(
+          _tableName,
+          {'fileName': finalFileName, 'filePath': newPath},
+          where: 'id = ?',
+          whereArgs: [id],
+        );
+        
+        print('✏️ History entry renamed: id=$id, $finalFileName');
+        
+        // Also sync the renamed file up if needed, but since we rely on it syncing through load, we leave it simple here.
+        _updateStatsNotifier();
+      }
     }
   }
 
@@ -213,6 +264,12 @@ class ConversionHistoryService {
       imageCount: imageCount,
       pdfCount: pdfCount,
     );
+  }
+  
+  /// Update stats notifier
+  Future<void> _updateStatsNotifier() async {
+    if (!_isInitialized) return;
+    statsNotifier.value = await getStats();
   }
 
   /// Close the database

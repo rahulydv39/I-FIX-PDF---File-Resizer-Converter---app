@@ -35,7 +35,7 @@ class SupportService {
       scheme: 'mailto',
       path: supportEmail,
       query: _encodeQueryParameters({
-        'subject': 'Support Request - File Converter App',
+        'subject': 'Support Request - I FIX PDF App',
         'body': 'Describe your issue here...',
       }),
     );

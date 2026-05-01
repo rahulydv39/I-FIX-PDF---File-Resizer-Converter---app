@@ -76,8 +76,8 @@ class _TargetSizeSelectorState extends State<TargetSizeSelector> {
     }
 
     final number = double.tryParse(value);
-    if (number == null) {
-      setState(() => _errorText = 'Invalid number');
+    if (number == null || number <= 0) {
+      setState(() => _errorText = 'Enter a valid file size');
       return;
     }
 
@@ -89,7 +89,7 @@ class _TargetSizeSelectorState extends State<TargetSizeSelector> {
     }
 
     if (sizeKb < 5) {
-      setState(() => _errorText = 'Min 5 KB');
+      setState(() => _errorText = 'Minimum size is 5 KB');
       return;
     }
 
@@ -149,6 +149,38 @@ class _TargetSizeSelectorState extends State<TargetSizeSelector> {
           ),
         ],
         
+        const SizedBox(height: 16),
+        
+        // Show selected size clearly
+        Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: AppColors.primary.withValues(alpha: 0.1),
+            borderRadius: BorderRadius.circular(8),
+            border: Border.all(
+              color: AppColors.primary.withValues(alpha: 0.3),
+            ),
+          ),
+          child: Row(
+            children: [
+              const Icon(
+                Icons.check_circle_rounded,
+                color: AppColors.primary,
+                size: 20,
+              ),
+              const SizedBox(width: 8),
+              Text(
+                'Target size: ${widget.selectedSizeKb} KB',
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.primary,
+                ),
+              ),
+            ],
+          ),
+        ),
+        
         const SizedBox(height: 12),
         
         // Helper text
@@ -171,9 +203,7 @@ class _TargetSizeSelectorState extends State<TargetSizeSelector> {
               const SizedBox(width: 8),
               Expanded(
                 child: Text(
-                  _isCustom 
-                      ? 'Custom size will be used for compression'
-                      : 'Final size will be close to selected value',
+                  'For images: output will be slightly smaller than selected size',
                   style: const TextStyle(
                     fontSize: 12,
                     color: AppColors.info,

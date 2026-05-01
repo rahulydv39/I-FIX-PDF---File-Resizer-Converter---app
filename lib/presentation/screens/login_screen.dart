@@ -64,7 +64,7 @@ class _LoginScreenState extends State<LoginScreen> {
 
               // Title
               const Text(
-                'File Converter',
+                'I FIX PDF',
                 style: TextStyle(
                   fontSize: 28,
                   fontWeight: FontWeight.bold,

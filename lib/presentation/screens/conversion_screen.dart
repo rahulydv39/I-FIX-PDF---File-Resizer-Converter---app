@@ -18,6 +18,7 @@ import '../bloc/pdf_conversion/pdf_conversion_state.dart';
 import '../bloc/monetization/monetization_bloc.dart';
 import '../bloc/monetization/monetization_event.dart';
 import '../bloc/monetization/monetization_state.dart';
+import '../controllers/banner_ad_controller.dart';
 import '../widgets/conversion_success_banner.dart';
 
 /// Screen showing conversion progress
@@ -50,6 +51,7 @@ class _ConversionScreenContent extends StatefulWidget {
 
 class _ConversionScreenContentState extends State<_ConversionScreenContent> {
   bool _hasStartedConversion = false;
+  BannerAdController? _bannerAdController;
 
   @override
   void initState() {
@@ -58,6 +60,27 @@ class _ConversionScreenContentState extends State<_ConversionScreenContent> {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _startConversion();
     });
+
+    // Initialize banner ad controller for normal flows (no target size)
+    if (widget.settings.targetSize == null) {
+      _bannerAdController = BannerAdController(
+        onAdLoaded: (_) {
+          if (mounted) setState(() {});
+        },
+      );
+      // Load ad after build to have context
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted && _bannerAdController != null) {
+          _bannerAdController!.loadAd(context);
+        }
+      });
+    }
+  }
+
+  @override
+  void dispose() {
+    _bannerAdController?.dispose();
+    super.dispose();
   }
 
   void _startConversion() async {
@@ -206,42 +229,13 @@ class _ConversionScreenContentState extends State<_ConversionScreenContent> {
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           // Progress Indicator
-          SizedBox(
-            width: 150,
-            height: 150,
-            child: Stack(
-              fit: StackFit.expand,
+          const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                CircularProgressIndicator(
-                  value: state.progress,
-                  strokeWidth: 8,
-                  backgroundColor: AppColors.backgroundLight,
-                  valueColor:
-                      const AlwaysStoppedAnimation<Color>(AppColors.primary),
-                ),
-                Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        '${(state.progress * 100).toInt()}%',
-                        style: const TextStyle(
-                          fontSize: 32,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.textPrimaryDark,
-                        ),
-                      ),
-                      if (state.status == ConversionStatus.optimizing)
-                        Text(
-                          'Pass ${state.optimizationPass}/${state.totalOptimizationPasses}',
-                          style: const TextStyle(
-                            fontSize: 12,
-                            color: AppColors.textSecondaryDark,
-                          ),
-                        ),
-                    ],
-                  ),
-                ),
+                CircularProgressIndicator(),
+                SizedBox(height: 12),
+                Text("Optimizing file size..."),
               ],
             ),
           ),
@@ -291,31 +285,20 @@ class _ConversionScreenContentState extends State<_ConversionScreenContent> {
 
   ///Build completed state UI
   Widget _buildCompletedState(PdfConversionState state) {
-    // Only show banner for normal conversions (no target size)
-    final isTargetSizeUsed = widget.settings.targetSize != null;
-    final adsService = sl<AdsService>();
-    final bannerAd = adsService.createBannerAdIfNeeded(
-      isTargetSizeUsed: isTargetSizeUsed,
-    );
-    
     return SingleChildScrollView(
       padding: const EdgeInsets.all(24),
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           // Banner Ad at the top - only for normal conversions
-          if (bannerAd != null) ...[
+          if (_bannerAdController != null && _bannerAdController!.isLoaded) ...[
             Container(
               decoration: BoxDecoration(
                 color: AppColors.cardDark,
                 borderRadius: BorderRadius.circular(8),
               ),
               padding: const EdgeInsets.all(8),
-              child: SizedBox(
-                width: bannerAd.size.width.toDouble(),
-                height: bannerAd.size.height.toDouble(),
-                child: AdWidget(ad: bannerAd),
-              ),
+              child: _bannerAdController!.getAdWidget(),
             ),
             const SizedBox(height: 24),
           ],

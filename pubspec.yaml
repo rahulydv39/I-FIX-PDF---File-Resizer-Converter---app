@@ -1,7 +1,7 @@
 name: file_converter
 description: "Image to PDF Converter & Image Resizer - Convert images to PDF with DPI control and size optimization"
 publish_to: 'none'
-version: 1.0.0+1
+version: 1.0.0+5
 
 environment:
   sdk: ^3.7.0
@@ -20,6 +20,7 @@ dependencies:
   # Image Handling
   image_picker: ^1.1.2
   image: ^4.3.0
+  flutter_image_compress: ^2.4.0
   platform_image_converter: ^0.2.0
 
   # PDF Generation
@@ -56,6 +57,12 @@ dependencies:
   gal: ^2.3.2
   url_launcher: ^6.3.0
   in_app_review: ^2.0.9
+  google_mlkit_text_recognition: ^0.15.1
+  intl: ^0.20.2
+  cunning_document_scanner: ^1.2.3
+  flutter_launcher_icons: ^0.14.4
+  device_info_plus: ^11.3.0
+  syncfusion_flutter_pdf: ^33.1.49
 
 
 dev_dependencies:
@@ -63,7 +70,6 @@ dev_dependencies:
     sdk: flutter
   flutter_lints: ^5.0.0
   mocktail: ^1.0.4
-  flutter_launcher_icons: ^0.13.1
   flutter_native_splash: ^2.4.0
   change_app_package_name: ^1.1.0
 
@@ -77,16 +83,16 @@ flutter_launcher_icons:
 
 flutter_native_splash:
   color: "#0F172A" # Dark blue background (AppColors.backgroundDark)
-  image: "assets/icons/app_logo.png"
-  branding: "assets/icons/app_logo.png"
+  image: "assets/icon/app_icon.png"
+  branding: "assets/icon/app_icon.png"
   color_dark: "#0F172A"
-  image_dark: "assets/icons/app_logo.png"
-  branding_dark: "assets/icons/app_logo.png"
+  image_dark: "assets/icon/app_icon.png"
+  branding_dark: "assets/icon/app_icon.png"
 
   android_12:
-    image: "assets/icons/app_logo.png"
+    image: "assets/icon/app_icon.png"
     icon_background_color: "#0F172A"
-    image_dark: "assets/icons/app_logo.png"
+    image_dark: "assets/icon/app_icon.png"
     icon_background_color_dark: "#0F172A"
 
 

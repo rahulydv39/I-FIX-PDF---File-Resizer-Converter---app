@@ -6,10 +6,119 @@ import 'dart:io';
 import 'dart:typed_data';
 import 'package:image/image.dart' as img;
 import 'package:path_provider/path_provider.dart';
+import 'package:flutter/foundation.dart';
 import '../../core/constants/app_constants.dart';
 import '../../domain/entities/image_item.dart';
 import '../../domain/entities/image_settings.dart';
+import '../../core/utils/target_size_optimizer.dart';
 import 'file_export_service.dart';
+
+/// Arguments for isolate computation
+class _IsolateConversionArgs {
+  final Uint8List originalBytes;
+  final ImageSettings settings;
+
+  _IsolateConversionArgs({required this.originalBytes, required this.settings});
+}
+
+/// Result of isolate computation
+class _IsolateConversionResult {
+  final Uint8List outputBytes;
+  final int originalWidth;
+  final int originalHeight;
+  final int newWidth;
+  final int newHeight;
+
+  _IsolateConversionResult({
+    required this.outputBytes,
+    required this.originalWidth,
+    required this.originalHeight,
+    required this.newWidth,
+    required this.newHeight,
+  });
+}
+
+/// The top-level isolate entry point function
+Future<_IsolateConversionResult> _processImageInIsolate(
+  _IsolateConversionArgs args,
+) async {
+  final originalImage = img.decodeImage(args.originalBytes);
+  if (originalImage == null) {
+    throw Exception('Failed to decode image');
+  }
+
+  final originalWidth = originalImage.width;
+  final originalHeight = originalImage.height;
+
+  img.Image processedImage = originalImage;
+
+  final hasTargetSize =
+      args.settings.targetSizeKb != null && args.settings.targetSizeKb! > 0;
+
+  // Determine if any transformation is actually needed
+  final needsResize = args.settings.resizeMode != ResizeMode.original;
+  final needsGrayscale = args.settings.grayscale;
+  final hasTransformation = needsResize || needsGrayscale;
+
+  late Uint8List outputBytes;
+
+  if (hasTargetSize) {
+    // ── Target-size path ───────────────────────────────────────────────────
+    // Apply resize BEFORE handing bytes to TargetSizeOptimizer.
+    // ❌ DO NOT encode at quality 100 — that inflates PNG/WebP and breaks
+    //    the binary search in TargetSizeOptimizer.
+    // ✅ Always produce a JPEG baseline so the optimizer can work correctly.
+    processedImage = ImageConversionService.applyResize(
+      processedImage,
+      args.settings,
+    );
+    if (needsGrayscale) {
+      processedImage = img.grayscale(processedImage);
+    }
+
+    print('Resize applied: ${processedImage.width}x${processedImage.height}');
+
+    // JPEG at q95 — the optimizer (compress or expand) runs on the main thread.
+    outputBytes = Uint8List.fromList(
+      img.encodeJpg(processedImage, quality: 95),
+    );
+  } else if (!hasTransformation) {
+    // ── No target size AND no transformation ──────────────────────────────
+    // Return the original bytes as-is to avoid UNNECESSARY re-encoding which
+    // would only inflate the file size (quality-100 decode→encode always grows).
+    print(
+      'No target size, no transformation → returning original bytes unchanged',
+    );
+    outputBytes = args.originalBytes;
+  } else {
+    // ── No target size BUT has resize / grayscale ─────────────────────────
+    // Apply transformations, then encode at high quality in the chosen format.
+    print('No target size detected → FAST CONVERT with transformations');
+    processedImage = ImageConversionService.applyResize(
+      processedImage,
+      args.settings,
+    );
+    if (needsGrayscale) {
+      processedImage = img.grayscale(processedImage);
+    }
+
+    print('Resize applied: ${processedImage.width}x${processedImage.height}');
+
+    outputBytes = ImageConversionService.encodeWithQuality(
+      processedImage,
+      args.settings.outputFormat,
+      95,
+    );
+  }
+
+  return _IsolateConversionResult(
+    outputBytes: outputBytes,
+    originalWidth: originalWidth,
+    originalHeight: originalHeight,
+    newWidth: processedImage.width,
+    newHeight: processedImage.height,
+  );
+}
 
 /// Result of a single image conversion
 class ImageConversionResult {
@@ -102,9 +211,8 @@ class BatchConversionResult {
 class ImageConversionService {
   final FileExportService _exportService;
 
-  ImageConversionService({
-    FileExportService? exportService,
-  }) : _exportService = exportService ?? FileExportService();
+  ImageConversionService({FileExportService? exportService})
+    : _exportService = exportService ?? FileExportService();
 
   /// Convert a single image
   Future<ImageConversionResult> convertImage({
@@ -115,63 +223,70 @@ class ImageConversionService {
     // Load image
     final file = File(image.path);
     final bytes = await file.readAsBytes();
-    final originalImage = img.decodeImage(bytes);
+    // Run heavy CPU tasks (decode, resize, upscale) in background isolate
+    final isolateResult = await compute(
+      _processImageInIsolate,
+      _IsolateConversionArgs(originalBytes: bytes, settings: settings),
+    );
 
-    if (originalImage == null) {
-      throw ImageConversionException('Failed to decode image: ${image.path}');
+    Uint8List outputBytes = isolateResult.outputBytes;
+    final originalWidth = isolateResult.originalWidth;
+    final originalHeight = isolateResult.originalHeight;
+    final newWidth = isolateResult.newWidth;
+    final newHeight = isolateResult.newHeight;
+
+    // Run fast native binary search compression on the main thread
+    // This uses C-code and doesn't block UI natively
+    bool useTargetSize =
+        settings.targetSizeKb != null && settings.targetSizeKb! > 0;
+    if (useTargetSize) {
+      // 1. RESIZE WIDTH/HEIGHT NOT WORKING fix
+      // Ensure resize happens BEFORE compression and is actually used.
+      final (targetWidth, targetHeight) = settings.effectiveDimensions;
+      if (targetWidth != null || targetHeight != null) {
+        img.Image? image = img.decodeImage(outputBytes);
+        if (image != null) {
+          int newWidth = targetWidth ?? image.width;
+          int newHeight = targetHeight ?? image.height;
+
+          image = img.copyResize(image, width: newWidth, height: newHeight);
+
+          outputBytes = Uint8List.fromList(img.encodeJpg(image, quality: 100));
+        }
+      }
+
+      outputBytes = await TargetSizeOptimizer.processTargetSize(
+        inputBytes: outputBytes,
+        targetKB: settings.targetSizeKb!,
+        useTargetSize: true,
+      );
     }
 
-    final originalWidth = originalImage.width;
-    final originalHeight = originalImage.height;
-
-    // Process image
-    img.Image processedImage = originalImage;
-
-    // Apply resize
-    processedImage = _applyResize(processedImage, settings);
-
-    // Apply grayscale if enabled
-    if (settings.grayscale) {
-      processedImage = img.grayscale(processedImage);
-    }
-
-    // Encode to target format with target size optimization if enabled
-    Uint8List outputBytes;
-    
-    // Check if target size is set and valid (must be > 0)
-    final hasTargetSize = settings.targetSizeKb != null && settings.targetSizeKb! > 0;
-    
-    if (hasTargetSize) {
-      print('Target size detected → using iterative compression');
-      print('Target Size: ${settings.targetSizeKb} KB');
-      
-      // Optimize for target file size
-      final targetBytes = settings.targetSizeKb! * 1024;
-      outputBytes = await _optimizeForTargetSize(
-        image: processedImage,
-        settings: settings,
-        targetBytes: targetBytes,
-      );
-      
-      print('Final output size: ${(outputBytes.length / 1024).toStringAsFixed(2)} KB');
-    } else {
-      print('No target size detected → using normal compression');
-      // Use standard quality encoding
-      outputBytes = _encodeWithQuality(
-        processedImage,
-        settings.outputFormat,
-        settings.quality,
-      );
+    // 4 & 5. FILE SIZE INCREASING & SAFETY CHECK fix
+    if (outputBytes.length > bytes.length && !useTargetSize) {
+      outputBytes = bytes; // prevent unnecessary increase
     }
 
     // Get MIME type
     final mimeType = _getMimeType(settings.outputFormat);
-    
-    // Generate filename with IMG_ prefix
-    final now = DateTime.now();
-    final timestamp = '${now.year}${now.month.toString().padLeft(2, '0')}${now.day.toString().padLeft(2, '0')}_${now.hour.toString().padLeft(2, '0')}${now.minute.toString().padLeft(2, '0')}${now.second.toString().padLeft(2, '0')}';
-    final filename = 'IMG_$timestamp.${settings.outputFormat.extension}';
-    
+
+    // Generate a UNIQUE filename every time using millisecond epoch so that
+    // consecutive conversions NEVER overwrite each other.
+    // Custom names get a timestamp suffix appended to keep them unique.
+    final timestamp = DateTime.now().millisecondsSinceEpoch;
+
+    String filename;
+    if (settings.customFileName != null &&
+        settings.customFileName!.isNotEmpty) {
+      // Strip any existing extension from the custom name, then re-apply.
+      final base = settings.customFileName!.replaceAll(RegExp(r'\.[^.]+$'), '');
+      filename = '${base}_$timestamp.${settings.outputFormat.extension}';
+    } else {
+      filename = 'IMG_$timestamp.${settings.outputFormat.extension}';
+    }
+
+    print('Output path: $filename');
+
     // Export file using FileExportService
     final exportedFile = await _exportService.exportFile(
       bytes: outputBytes,
@@ -180,6 +295,8 @@ class ImageConversionService {
       fileType: ExportFileType.image,
     );
 
+    print('Output path: ${exportedFile.path}');
+
     return ImageConversionResult(
       originalImage: image,
       outputPath: exportedFile.path,
@@ -187,8 +304,8 @@ class ImageConversionService {
       convertedSizeBytes: exportedFile.sizeBytes,
       originalWidth: originalWidth,
       originalHeight: originalHeight,
-      newWidth: processedImage.width,
-      newHeight: processedImage.height,
+      newWidth: newWidth,
+      newHeight: newHeight,
     );
   }
 
@@ -207,10 +324,7 @@ class ImageConversionService {
       onProgress?.call(i + 1, images.length);
 
       try {
-        final result = await convertImage(
-          image: images[i],
-          settings: settings,
-        );
+        final result = await convertImage(image: images[i], settings: settings);
         results.add(result);
         successCount++;
       } catch (e) {
@@ -244,13 +358,14 @@ class ImageConversionService {
   }
 
   /// Apply resize transformations
-  img.Image _applyResize(img.Image image, ImageSettings settings) {
+  static img.Image applyResize(img.Image image, ImageSettings settings) {
     switch (settings.resizeMode) {
       case ResizeMode.original:
         return image;
 
       case ResizeMode.percentage:
-        final newWidth = (image.width * settings.resizePercentage / 100).round();
+        final newWidth =
+            (image.width * settings.resizePercentage / 100).round();
         final newHeight =
             (image.height * settings.resizePercentage / 100).round();
         return img.copyResize(
@@ -311,7 +426,9 @@ class ImageConversionService {
 
   /// Generate output path for converted image
   Future<String> _generateOutputPath(
-      ImageItem image, OutputFormat format) async {
+    ImageItem image,
+    OutputFormat format,
+  ) async {
     final directory = await _getOutputDirectory();
     final timestamp = DateTime.now().millisecondsSinceEpoch;
     final baseName = image.fileName.split('.').first;
@@ -321,8 +438,9 @@ class ImageConversionService {
   /// Get output directory
   Future<String> _getOutputDirectory() async {
     final appDocDir = await getApplicationDocumentsDirectory();
-    final outputDir =
-        Directory('${appDocDir.path}/${AppConstants.convertedImagesFolder}');
+    final outputDir = Directory(
+      '${appDocDir.path}/${AppConstants.convertedImagesFolder}',
+    );
 
     if (!await outputDir.exists()) {
       await outputDir.create(recursive: true);
@@ -361,97 +479,8 @@ class ImageConversionService {
     return (image.sizeBytes * sizeFactor).round();
   }
 
-  /// Optimize image to hit target file size using safe sequential compression algorithm
-  Future<Uint8List> _optimizeForTargetSize({
-    required img.Image image,
-    required ImageSettings settings,
-    required int targetBytes,
-  }) async {
-    print('🎯 TARGET SIZE OPTIMIZATION START');
-    print('   Original: ${image.width}x${image.height}');
-    print('   Target: ${(targetBytes / 1024).toStringAsFixed(1)} KB');
-    print('   Format: ${settings.outputFormat.displayName}');
-
-    // Step 3: Validate Target Size
-    int safeTargetBytes = targetBytes;
-    if (safeTargetBytes < 10 * 1024) {
-      print('⚠️ Target size too small, setting absolute minimum to 10KB');
-      safeTargetBytes = 10 * 1024;
-    }
-
-    try {
-      // Step 6: Memory Safety - single decoded image reused
-      img.Image workingImage = image;
-      
-      // Step 1: Implement Safe Compression Algorithm
-      int quality = 95;
-      final int minQuality = 20;
-      final int maxAttempts = 10;
-      int attempts = 0;
-      
-      Uint8List? bestBytes;
-      int bestDiff = double.maxFinite.toInt();
-
-      while (attempts < maxAttempts) {
-        attempts++;
-        
-        // Encode with current quality
-        Uint8List encodedBytes = _encodeWithQuality(workingImage, settings.outputFormat, quality);
-        
-        int diff = (encodedBytes.length - safeTargetBytes).abs();
-        final sizeKB = encodedBytes.length / 1024;
-        final targetKB = safeTargetBytes / 1024;
-        
-        // Step 7: Logging
-        print('   📊 Attempt $attempts: Q=$quality, Size=${sizeKB.toStringAsFixed(1)}KB (target: ${targetKB.toStringAsFixed(1)}KB)');
-        
-        // Save best effort
-        if (diff < bestDiff) {
-          bestDiff = diff;
-          bestBytes = encodedBytes;
-        }
-        
-        // If file size <= target size -> stop
-        if (encodedBytes.length <= safeTargetBytes) {
-          print('   ✅ Target achieved! Final: ${sizeKB.toStringAsFixed(1)}KB');
-          return encodedBytes;
-        }
-        
-        // Otherwise reduce quality
-        quality -= 10;
-        
-        // Step 2: Add Image Resizing Fallback if quality gets too low
-        if (quality < minQuality && encodedBytes.length > safeTargetBytes) {
-          print('   🔽 Quality reached minimum, applying resize fallback by 10%');
-          workingImage = img.copyResize(
-            workingImage,
-            width: (workingImage.width * 0.9).round(),
-            height: (workingImage.height * 0.9).round(),
-            interpolation: img.Interpolation.linear,
-          );
-          // Reset quality slightly to try compressing the smaller image without brutal artifacting
-          quality = 70; 
-        }
-      }
-      
-      // Step 4: Prevent Infinite Loop (max attempts reached)
-      if (bestBytes != null) {
-        print('   ⚠️ Max attempts reached, returning best effort: ${(bestBytes.length / 1024).toStringAsFixed(1)} KB');
-        return bestBytes;
-      }
-      
-      return _encodeWithQuality(image, settings.outputFormat, 80); // Failsafe
-      
-    } catch (e) {
-      // Step 5: Handle Exceptions
-      print('❌ Compression failed with error: $e');
-      // Return a basic compressed version if logic fails completely
-      return _encodeWithQuality(image, settings.outputFormat, 60);
-    }
-  }
-
   /// Encode image with specific quality setting
-  Uint8List _encodeWithQuality(
+  static Uint8List encodeWithQuality(
     img.Image image,
     OutputFormat format,
     int quality,

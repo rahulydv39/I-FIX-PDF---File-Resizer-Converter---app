@@ -1,4 +1,4 @@
-/// File Converter App Root
+/// I FIX PDF App Root
 /// Provides BLoC providers and theme configuration
 library;
 
@@ -42,7 +42,7 @@ class FileConverterApp extends StatelessWidget {
         ),
       ],
       child: MaterialApp(
-        title: 'File Converter',
+        title: 'I FIX PDF',
         debugShowCheckedModeBanner: false,
 
         // Theme configuration

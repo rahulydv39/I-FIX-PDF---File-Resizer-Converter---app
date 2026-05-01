@@ -1,6 +1,6 @@
 # file_converter
 
-File Converter is a simple and powerful tool that helps users resize images, convert photos to PDF, and merge multiple PDF files quickly and easily.
+I FIX PDF is a simple and powerful tool that helps users resize images, convert photos to PDF, and merge multiple PDF files quickly and easily.
 
 This app is designed for users who need to reduce image size to a specific KB value for online forms, job applications, exam submissions, and document uploads.
 
@@ -13,10 +13,10 @@ Key Features:
 • Easy-to-use interface
 • Works offline without needing an internet connection
 
-File Converter helps you manage images and documents efficiently directly on your device.
+I FIX PDF helps you manage images and documents efficiently directly on your device.
 
 
-Initial release of File Converter.
+Initial release of I FIX PDF.
 
 Features included in this version:
 • Image resize to target KB size

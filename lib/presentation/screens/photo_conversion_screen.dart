@@ -215,11 +215,6 @@ class _PhotoConversionScreenContentState
             ),
           );
         }
-        // Show interstitial ad just before success page if target size was used
-        if (state.isCompleted && widget.settings.targetSizeKb != null) {
-          final adsService = sl<AdsService>();
-          adsService.showInterstitialAd();
-        }
         // Show "File saved" snackbar on completion
         if (state.isCompleted && state.result != null) {
           ConversionSuccessBanner.showSavedSnackBar(context);
@@ -243,41 +238,13 @@ class _PhotoConversionScreenContentState
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
           // Progress Indicator
-          SizedBox(
-            width: 150,
-            height: 150,
-            child: Stack(
-              fit: StackFit.expand,
+          const Center(
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
               children: [
-                CircularProgressIndicator(
-                  value: state.progress,
-                  strokeWidth: 8,
-                  backgroundColor: AppColors.backgroundLight,
-                  valueColor:
-                      const AlwaysStoppedAnimation<Color>(AppColors.secondary),
-                ),
-                Center(
-                  child: Column(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Text(
-                        state.progressPercent,
-                        style: const TextStyle(
-                          fontSize: 32,
-                          fontWeight: FontWeight.bold,
-                          color: AppColors.textPrimaryDark,
-                        ),
-                      ),
-                      Text(
-                        '${state.currentImage}/${state.totalImages}',
-                        style: const TextStyle(
-                          fontSize: 14,
-                          color: AppColors.textSecondaryDark,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                CircularProgressIndicator(),
+                SizedBox(height: 12),
+                Text("Optimizing file size..."),
               ],
             ),
           ),

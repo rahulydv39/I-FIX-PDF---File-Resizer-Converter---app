@@ -8,7 +8,9 @@ import '../../core/theme/app_colors.dart';
 import '../../core/di/injection_container.dart';
 import '../../data/services/conversion_history_service.dart';
 import '../../data/services/file_export_service.dart';
+import '../../data/services/document_service.dart';
 import '../../domain/entities/conversion_history_item.dart';
+import '../widgets/folder_selection_dialog.dart';
 
 /// Screen showing all converted image history
 class ImageHistoryScreen extends StatefulWidget {
@@ -161,11 +163,20 @@ class _ImageHistoryScreenState extends State<ImageHistoryScreen> {
                 ),
               ),
 
-              // Chevron
-              const Icon(
-                Icons.chevron_right_rounded,
-                color: AppColors.textSecondaryDark,
-                size: 22,
+              // Actions menu
+              PopupMenuButton<String>(
+                icon: const Icon(Icons.more_vert_rounded, color: AppColors.textSecondaryDark, size: 22),
+                color: AppColors.cardDark,
+                itemBuilder: (context) => [
+                  const PopupMenuItem(value: 'rename', child: Text('Rename', style: TextStyle(color: AppColors.textPrimaryDark))),
+                  const PopupMenuItem(value: 'move', child: Text('Move to Folder', style: TextStyle(color: AppColors.textPrimaryDark))),
+                  const PopupMenuItem(value: 'delete', child: Text('Delete', style: TextStyle(color: AppColors.error))),
+                ],
+                onSelected: (value) {
+                  if (value == 'rename') _renameFile(item);
+                  if (value == 'move') _moveToFolder(item);
+                  if (value == 'delete') _deleteFile(item);
+                },
               ),
             ],
           ),
@@ -353,6 +364,30 @@ class _ImageHistoryScreenState extends State<ImageHistoryScreen> {
                   _shareFile(item);
                 },
               ),
+              // Rename
+              ListTile(
+                leading: const Icon(Icons.edit_rounded, color: AppColors.primary),
+                title: const Text(
+                  'Rename',
+                  style: TextStyle(color: AppColors.textPrimaryDark),
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _renameFile(item);
+                },
+              ),
+              // Move 
+              ListTile(
+                leading: const Icon(Icons.drive_file_move_rounded, color: AppColors.primary),
+                title: const Text(
+                  'Move to Folder',
+                  style: TextStyle(color: AppColors.textPrimaryDark),
+                ),
+                onTap: () {
+                  Navigator.pop(ctx);
+                  _moveToFolder(item);
+                },
+              ),
               // Delete
               ListTile(
                 leading: const Icon(Icons.delete_rounded, color: AppColors.error),
@@ -371,4 +406,59 @@ class _ImageHistoryScreenState extends State<ImageHistoryScreen> {
       ),
     );
   }
+
+  void _renameFile(ConversionHistoryItem item) async {
+    final ctrl = TextEditingController(text: item.fileName);
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.cardDark,
+        title: const Text('Rename File', style: TextStyle(color: AppColors.textPrimaryDark)),
+        content: TextField(
+          controller: ctrl,
+          style: const TextStyle(color: AppColors.textPrimaryDark),
+          decoration: const InputDecoration(
+            hintText: 'New file name',
+            hintStyle: TextStyle(color: AppColors.textSecondaryDark),
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text('Cancel')),
+          ElevatedButton(onPressed: () => Navigator.pop(ctx, ctrl.text.trim()), child: const Text('Rename')),
+        ],
+      ),
+    );
+
+    if (newName != null && newName.isNotEmpty && newName != item.fileName) {
+      if (item.id != null) {
+        await _historyService.renameHistory(item.id!, newName);
+        _refresh();
+      }
+    }
+  }
+
+  void _moveToFolder(ConversionHistoryItem item) async {
+    final folderId = await showDialog<String>(
+      context: context,
+      builder: (_) => const FolderSelectionDialog(),
+    );
+
+    if (folderId != null) {
+      final docService = sl<DocumentService>();
+      await docService.saveDocument(
+        filePath: item.filePath,
+        fileName: item.fileName,
+        extractedText: 'Converted Image', // Or empty
+        fileType: 'image',
+        folderId: folderId,
+      );
+
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('File copied to folder')),
+      );
+    }
+  }
 }
+

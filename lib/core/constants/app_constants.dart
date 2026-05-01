@@ -7,7 +7,7 @@ class AppConstants {
   AppConstants._();
 
   // App Info
-  static const String appName = 'File Converter';
+  static const String appName = 'I FIX PDF';
   static const String appVersion = '1.0.0';
 
   // Supported Image Formats

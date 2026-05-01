@@ -48,6 +48,7 @@ class ExportedFile {
 enum ExportFileType {
   image,
   pdf,
+  scanned,
 }
 
 /// Service for handling file exports with platform-specific optimizations
@@ -69,13 +70,14 @@ class FileExportService {
     required String filename,
     required String mimeType,
     ExportFileType fileType = ExportFileType.image,
+    String? subFolder,
   }) async {
     print('📁 EXPORTING FILE: $filename');
     print('   MIME: $mimeType');
     print('   Bytes: ${bytes.length} (${(bytes.length / 1024).toStringAsFixed(1)} KB)');
 
     // ── STEP 1: Resolve writable directory ──────────────────────────────────
-    final directory = await _getWritableDirectory(fileType);
+    final directory = await _getWritableDirectory(fileType, subFolder);
     print('   Dir: $directory');
 
     // ── STEP 2: Create directory if needed ──────────────────────────────────
@@ -112,7 +114,7 @@ class FileExportService {
     bool addedToMediaStore = false;
     if (Platform.isAndroid) {
       try {
-        await _publishToMediaStore(path, mimeType, fileType);
+        await _publishToMediaStore(path, mimeType, fileType, subFolder);
         addedToMediaStore = true;
         print('   ✅ Published to MediaStore');
       } catch (e) {
@@ -148,27 +150,30 @@ class FileExportService {
   ///   No special permissions needed on any API level.
   ///
   /// iOS: app Documents directory (accessible via Files app).
-  Future<String> _getWritableDirectory(ExportFileType fileType) async {
+  Future<String> _getWritableDirectory(ExportFileType fileType, [String? subFolder]) async {
+    final folderName = _getFolderName(fileType);
+    final relativePath = subFolder != null ? 'I_FIX_PDF/$folderName/$subFolder' : 'I_FIX_PDF/$folderName';
+
     if (Platform.isAndroid) {
       // getExternalStorageDirectory() returns the app-private external dir.
       // This is ALWAYS writable — no WRITE_EXTERNAL_STORAGE needed on API 29+.
       final externalDir = await getExternalStorageDirectory();
       if (externalDir != null) {
-        return '${externalDir.path}/FileConverter/${_getFolderName(fileType)}';
+        return '${externalDir.path}/$relativePath';
       }
       // Fallback: internal app documents (always writable)
       final appDir = await getApplicationDocumentsDirectory();
-      return '${appDir.path}/FileConverter/${_getFolderName(fileType)}';
+      return '${appDir.path}/$relativePath';
     }
 
     if (Platform.isIOS) {
       final appDir = await getApplicationDocumentsDirectory();
-      return '${appDir.path}/FileConverter/${_getFolderName(fileType)}';
+      return '${appDir.path}/$relativePath';
     }
 
     // Desktop / other
     final appDir = await getApplicationDocumentsDirectory();
-    return '${appDir.path}/FileConverter/${_getFolderName(fileType)}';
+    return '${appDir.path}/$relativePath';
   }
 
   /// Public getter so callers can resolve the directory if needed.
@@ -178,9 +183,10 @@ class FileExportService {
   String _getFolderName(ExportFileType fileType) {
     switch (fileType) {
       case ExportFileType.image:
-        return 'Images';
       case ExportFileType.pdf:
-        return 'PDFs';
+        return 'Converted';
+      case ExportFileType.scanned:
+        return 'Scanner';
     }
   }
 
@@ -195,26 +201,29 @@ class FileExportService {
     String filePath,
     String mimeType,
     ExportFileType fileType,
+    [String? subFolder]
   ) async {
     if (!Platform.isAndroid) return;
 
     final mediaStore = MediaStore();
+    final folderName = _getFolderName(fileType);
+    final String relativeParam = subFolder != null ? 'I_FIX_PDF/$folderName/$subFolder' : 'I_FIX_PDF/$folderName';
 
     if (fileType == ExportFileType.image) {
-      // Images → DCIM/FileConverter/Images (visible in Gallery)
+      // Images → DCIM/I_FIX_PDF/Converted
       await mediaStore.saveFile(
         tempFilePath: filePath,
         dirType: DirType.photo,
         dirName: DirName.dcim,
-        relativePath: 'FileConverter/Images',
+        relativePath: relativeParam,
       );
     } else {
-      // PDFs/docs → Download/FileConverter/PDFs (visible in Downloads)
+      // PDFs/docs → Download/I_FIX_PDF/Converted or Scanner
       await mediaStore.saveFile(
         tempFilePath: filePath,
         dirType: DirType.download,
         dirName: DirName.download,
-        relativePath: 'FileConverter/PDFs',
+        relativePath: relativeParam,
       );
     }
   }
